@@ -48,7 +48,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #                 in_channels=33,
 #                 out_channels=256,
 #                 kernel_size=kernel_size,
-#                 padding=kernel_size // 2  # ✅ 保留边界信息
+#                 padding=kernel_size // 2  
 #             ),
 #             nn.ReLU(),
 #             nn.BatchNorm1d(256),
@@ -91,7 +91,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #             nn.Linear(256 * 2, 256),
 #             nn.ReLU(),
 #             nn.Linear(256, 1),
-#             nn.Sigmoid()  # 输出在 (0,1)，作为自适应权重
+#             nn.Sigmoid()  
 #         )
 #         self.esm_encoder = ESMFeatureEncoder(esm_dim=1152, hidden_dim=256)
 #
@@ -138,12 +138,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #         query = x.mean(dim=1, keepdim=True)
 #         context_vec, _ = self.attention(query, x)
 #
-#         # out = x  # (B, T, 256)
-#         # # 全局 max-pooling 或 mean-pooling 都可以，先用 max 试试
-#         # h_n = out.max(dim=1).values  # (B, 256)
-#         # # h_n = self.linear1(h_n)
-#         # # h_n = self.linear1(h_n)
-#         # context_vec, attention_weights = self.Attention(h_n, out)  # b*1*256 b*28*1 b*256 b*28*256
+#         
 #
 #         esm_vec, esm_attn = self.esm_encoder(fea2)  # s: (B, 256)
 #         # h_n1=s
@@ -151,20 +146,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #
 #
 #         fusion_input = torch.cat([context_vec, esm_vec], dim=-1)
-#         alpha = self.fusion_gate(fusion_input)  # (B, 1, 1)，自适应权重
-#         # alpha 越大，越偏向 context_vector；越小，越偏向 s
+#         alpha = self.fusion_gate(fusion_input)  # (B, 1, 1)，Adaptive weights
+#        
 #         fused = alpha * context_vec + (1.0 - alpha) * esm_vec
 #         fused = fused.squeeze(1)
 #         # fused = self.fusion(context_vector, s)
 #         # fused = s
-#         # ===== 4. 分类 =====
+#         # ===== 4. classifier =====
 #         rep = self.fc(fused)
 #         logits = self.classifier(rep).squeeze(-1)
 #         # fused = torch.mean(fused, 1)
 #         # representation = self.fc_task1(fused)
 #         # logits = self.classifier(representation).squeeze(-1)  # (B,) raw logits
 #
-#         # 5) 对比损失（建议先做归一化）
+#         # 5) loss
 #         # h_n_norm = F.normalize(h_n, dim=-1)
 #         # h_n1_norm = F.normalize(h_n1, dim=-1)
 #         # contrastive = self.contrastive_loss1(h_n_norm, h_n1_norm,labels)
@@ -175,54 +170,49 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #         ) if labels is not None else torch.tensor(0.0, device=logits.device)
 #
 #         return logits, rep, fused, loss_contrast
-# ====== 添加UMAP可视化函数 ======
+
 def create_umap_visualization(representations, labels, probs, preds, title_suffix=""):
     """
-    创建UMAP可视化
+    Create UMAP visualization
 
-    参数:
-        representations: numpy数组，形状 (n_samples, n_features)
-        labels: 真实标签列表/数组
-        probs: 预测概率列表/数组
-        preds: 预测标签列表/数组
-        title_suffix: 标题后缀
+  
     """
-    # 确保数据是numpy数组
+    
     representations = np.array(representations)
     labels = np.array(labels).flatten()
     probs = np.array(probs).flatten()
     preds = np.array(preds).flatten()
 
     n_samples = len(representations)
-    print(f"UMAP输入数据形状: {representations.shape}")
-    print(f"样本数量: {n_samples}")
-    print(f"标签分布: 0={np.sum(labels == 0)}, 1={np.sum(labels == 1)}")
+    print(f"Shape of the input data for UMAP: {representations.shape}")
+    print(f"sample size: {n_samples}")
+    print(f"Label Distribution: 0={np.sum(labels == 0)}, 1={np.sum(labels == 1)}")
 
-    # 1. 标准化数据（重要！）
+    # 1. standardized data
     from sklearn.preprocessing import StandardScaler
     scaler = StandardScaler()
     representations_scaled = scaler.fit_transform(representations)
 
-    # 2. UMAP降维
-    print("正在运行UMAP降维...")
+    
+  
 
-    # 创建UMAP降维器
+    # Create an UMAP dimensionality reducer
     reducer = umap.UMAP(
         n_components=2,
-        n_neighbors=min(50, n_samples - 1),  # 确保不超过样本数
+        n_neighbors=min(50, n_samples - 1),  
         min_dist=0.5,
         metric='euclidean',
         random_state=42,
         n_epochs=500
     )
 
-    # 执行降维
+    # Perform dimensionality reduction
     embedding = reducer.fit_transform(representations_scaled)
 
-    # 3. 创建可视化图表
+    # 3. Create visual charts
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
     palette = ['#1f77b4', '#ff7f0e']
-    # 子图1: 按真实标签着色
+    
     ax1 = axes[0, 0]
     scatter1 = ax1.scatter(
         embedding[:, 0], embedding[:, 1],
@@ -235,7 +225,7 @@ def create_umap_visualization(representations, labels, probs, preds, title_suffi
     ax1.set_ylabel('UMAP 2')
     ax1.grid(True, alpha=0.3)
 
-    # 添加类别中心
+    # Add category center
     for label_val in [0, 1]:
         if np.any(labels == label_val):
             mask = labels == label_val
@@ -243,123 +233,7 @@ def create_umap_visualization(representations, labels, probs, preds, title_suffi
             ax1.scatter(center[0], center[1], s=200, marker='*',
                         edgecolors='black', linewidth=2,
                         color=plt.cm.tab10(label_val), label=f'Class {label_val} center')
-
-    # # 子图2: 按预测概率着色
-    # ax2 = axes[0, 1]
-    # scatter2 = ax2.scatter(
-    #     embedding[:, 0], embedding[:, 1],
-    #     c=probs, cmap='coolwarm',
-    #     s=30, alpha=0.8, edgecolors='w', linewidth=0.5,
-    #     vmin=0, vmax=1
-    # )
-    # ax2.set_title('Probability prediction heatmap\n(Blue: Low probability, Red: High probability)')
-    # ax2.set_xlabel('UMAP 1')
-    # ax2.set_ylabel('UMAP 2')
-    # plt.colorbar(scatter2, ax=ax2, label='Predicted Probability')
-    # ax2.grid(True, alpha=0.3)
-    #
-    # # 子图3: 预测正确性
-    # ax3 = axes[0, 2]
-    # correct = preds == labels
-    # colors = ['#2E8B57' if c else '#DC143C' for c in correct]  # 绿色:正确, 红色:错误
-    #
-    # scatter3 = ax3.scatter(
-    #     embedding[:, 0], embedding[:, 1],
-    #     c=colors, s=30, alpha=0.8, edgecolors='w', linewidth=0.5
-    # )
-    #
-    # correct_count = np.sum(correct)
-    # error_count = np.sum(~correct)
-    # accuracy = correct_count / n_samples * 100
-    #
-    # ax3.set_title(f'Predictive accuracy\ncorrect: {correct_count} ({accuracy:.1f}%), error: {error_count}')
-    # ax3.set_xlabel('UMAP 1')
-    # ax3.set_ylabel('UMAP 2')
-    # ax3.grid(True, alpha=0.3)
-    #
-    # # 添加图例
-    # from matplotlib.patches import Patch
-    # legend_elements = [
-    #     Patch(facecolor='#2E8B57', edgecolor='w', label=f'correct ({correct_count})'),
-    #     Patch(facecolor='#DC143C', edgecolor='w', label=f'error ({error_count})')
-    # ]
-    # ax3.legend(handles=legend_elements, loc='upper right')
-    #
-    # # 子图4: 置信度分布
-    # ax4 = axes[1, 0]
-    # confidence = np.abs(probs - 0.5) * 2  # 映射到0-1
-    #
-    # if np.any(correct) and np.any(~correct):
-    #     ax4.hist(confidence[correct], bins=20, alpha=0.7,
-    #              label=f'correct (n={correct_count})', color='#dd81a6', density=True)
-    #     ax4.hist(confidence[~correct], bins=20, alpha=0.7,
-    #              label=f'error (n={error_count})', color='#ead2cc', density=True)
-    #     ax4.legend()
-    # else:
-    #     ax4.hist(confidence, bins=20, alpha=0.7, color='blue', density=True)
-    #
-    # ax4.set_xlabel('Prediction confidence level')
-    # ax4.set_ylabel('density')
-    # ax4.set_title('Confidence distribution')
-    # ax4.grid(True, alpha=0.3)
-    #
-    # # 子图5: 决策边界可视化
-    # ax5 = axes[1, 1]
-    #
-    # # 根据概率大小着色
-    # scatter5 = ax5.scatter(
-    #     embedding[:, 0], embedding[:, 1],
-    #     c=[palette[int(l)] for l in labels], cmap='tab10',
-    #     s=30, alpha=0.8, edgecolors='w', linewidth=0.5,
-    #     vmin=0, vmax=1
-    # )
-    #
-    # # 尝试绘制决策边界
-    # try:
-    #     from sklearn.svm import SVC
-    #     from matplotlib.colors import ListedColormap
-    #
-    #     # 训练SVM
-    #     svm = SVC(kernel='rbf', C=1.0, probability=True)
-    #     svm.fit(embedding, preds)
-    #
-    #     # 创建网格
-    #     h = 0.02  # 网格步长
-    #     x_min, x_max = embedding[:, 0].min() - 0.5, embedding[:, 0].max() + 0.5
-    #     y_min, y_max = embedding[:, 1].min() - 0.5, embedding[:, 1].max() + 0.5
-    #     xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
-    #                          np.arange(y_min, y_max, h))
-    #
-    #     # 预测网格点
-    #     Z = svm.predict(np.c_[xx.ravel(), yy.ravel()])
-    #     Z = Z.reshape(xx.shape)
-    #
-    #     # 绘制决策边界
-    #     cmap_light = ListedColormap(['#FFAAAA', '#AAAAFF'])
-    #     ax5.contourf(xx, yy, Z, alpha=0.2, cmap=cmap_light)
-    #
-    #     ax5.set_title('Prediction label + Decision boundary')
-    # except:
-    #     ax5.set_title('Prediction label ')
-    #
-    # ax5.set_xlabel('UMAP 1')
-    # ax5.set_ylabel('UMAP 2')
-    # ax5.grid(True, alpha=0.3)
-    #
-    # # 子图6: 样本密度热图
-    # ax6 = axes[1, 2]
-    #
-    # # 使用hexbin创建密度图
-    # hb = ax6.hexbin(embedding[:, 0], embedding[:, 1],
-    #                 gridsize=30, cmap='Blues', alpha=0.8)
-    #
-    # ax6.set_title('Sample density heatmap')
-    # ax6.set_xlabel('UMAP 1')
-    # ax6.set_ylabel('UMAP 2')
-    # plt.colorbar(hb, ax=ax6, label='Sample density')
-    # ax6.grid(True, alpha=0.3)
-
-    # 设置总标题
+    
     plt.suptitle(f'Representation UMAP visual {title_suffix}\n'
                  f'characteristic dimension: {representations.shape[1]}, sample size: {n_samples}',
                  fontsize=16, y=1.02)
@@ -373,12 +247,12 @@ def create_umap_visualization(representations, labels, probs, preds, title_suffi
 
 def create_simple_umap(representations, labels, title="UMAP Visualization"):
     """
-    创建一个简单的UMAP可视化
+    Create a simple UMAP visualization
     """
     representations = np.array(representations)
     labels = np.array(labels).flatten()
 
-    # 标准化
+    
     from sklearn.preprocessing import StandardScaler
     scaler = StandardScaler()
     representations_scaled = scaler.fit_transform(representations)
@@ -393,10 +267,10 @@ def create_simple_umap(representations, labels, title="UMAP Visualization"):
 
     embedding = reducer.fit_transform(representations_scaled)
 
-    # 绘图
+    # plot
     plt.figure(figsize=(10, 8))
 
-    # 根据标签着色
+    # According to the label coloring
     colors = ['blue' if label == 0 else 'red' for label in labels]
 
     plt.scatter(
@@ -404,7 +278,7 @@ def create_simple_umap(representations, labels, title="UMAP Visualization"):
         c=colors, s=40, alpha=0.7, edgecolors='w', linewidth=0.5
     )
 
-    # 添加类别标签
+    # Add category tags
     for label_val in [0, 1]:
         mask = labels == label_val
         if np.any(mask):
@@ -450,7 +324,7 @@ def make_data_with_unified_length(token_list, max_len):
     token2index = pickle.load(open('../data/residue2idx.pkl', 'rb'))
     data = []
     for i in range(len(token_list)):
-        token_list[i] = [token2index['[CLS]']] + token_list[i] + [token2index['[SEP]']]  # 前
+        token_list[i] = [token2index['[CLS]']] + token_list[i] + [token2index['[SEP]']]  
         n_pad = max_len - len(token_list[i])
         token_list[i].extend([0] * n_pad)
         data.append(token_list[i])
@@ -464,10 +338,10 @@ def esmcmain(client: ESMCInferenceClient, seq):
     # ================================================================
     # Example usage: one single protein
     # ================================================================
-    protein = ESMProtein(seq)  # 初始化ESMC蛋白序列对象
+    protein = ESMProtein(seq)  # Initialize the ESMC protein sequence object
 
     # Use logits endpoint. Using bf16 for inference optimization
-    protein_tensor = client.encode(protein)  # 将序列转化为索引
+    protein_tensor = client.encode(protein)  # Convert the sequence into an index
     output = client.logits(
         protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
     )
@@ -532,8 +406,8 @@ def test_model(test_data, test_label):
     all_preds = []
     all_probs = []
     all_labels = []
-    all_representations = []  # 新增：收集所有representation
-    all_logits = []  # 新增：收集logits
+    all_representations = []  
+    all_logits = []  
 
     for batch_input_ids, batch_attention_mask, batch_labels,batch_fea1,batch_fea2 in test_loader:
         with torch.no_grad():
@@ -544,52 +418,11 @@ def test_model(test_data, test_label):
                                                                  batch_attention_mask, labels=batch_labels)
             probs = torch.sigmoid(logits)
 
-            # 收集representation和logits
+            # collect representation and logits
             all_representations.append(fused.cpu().numpy())
             all_logits.append(logits.cpu().numpy())
 
-            # seq = test_data[0]
-            # batch_idx = 0
-            # # 模型输出：logits, rep, fused, loss2, esm_attn = model(...)
-            # attn_full = esm_attn[batch_idx].detach().cpu()  # 形状: (35,)
-            # # 去掉 CLS 和 EOS，只保留 33 个残基
-            # attn_residue = attn_full[1:-1]  # 形状: (33,)
-            # assert len(seq) == attn_residue.shape[0] == 33
-            #
-            # # Top-k 残基
-            # k = 10
-            # values, indices = torch.topk(attn_residue, k)
-            # indices = indices.tolist()
-            # values = values.tolist()
-            #
-            # print(f"Top-{k} 重要残基(33 个真实残基里):")
-            # for rank, (i, w) in enumerate(zip(indices, values), start=1):
-            #     aa = seq[i]  # 这里 i 是 0-based
-            #     print(f"#{rank}: 位置 {i + 1}, 氨基酸 {aa}, 注意力权重 {w:.4f}")
-            # import matplotlib.pyplot as plt
-            #
-            # attn_np = attn_residue.numpy()  # (33,)
-            # positions = np.arange(1, len(seq) + 1)
-            #
-            # # 归一化到 [0, 1]
-            # attn_norm = (attn_np - attn_np.min()) / (attn_np.max() - attn_np.min() + 1e-12)
-            #
-            # plt.figure(figsize=(10, 3))
-            # plt.stem(positions, attn_norm)
-            # plt.xlabel("Residue index (1-based)")
-            # plt.ylabel("Normalized attention")
-            # plt.title("ESM attention (normalized)")
-            # plt.xticks(positions, list(seq))
-            # plt.tight_layout()
-            # plt.show()
-
-        # outputs = outputs.logits
-        # outputs = logits
-        # batch_preds = (outputs >= 0.5).squeeze().cpu().numpy()
-        # batch_probs = outputs.cpu().detach().numpy()
-        # all_preds.extend(batch_preds.tolist())
-        # all_probs.extend(batch_probs.tolist())
-        # all_labels.extend(batch_labels.detach().cpu().numpy())
+        
         batch_probs = probs.cpu().numpy()
         batch_preds = (batch_probs >= 0.5).astype(int)
 
@@ -620,160 +453,4 @@ def test_model(test_data, test_label):
         f"MCC={mcc:.4f} | "
         f"AUC={auc:.4f}"
     )
-    # # ====== 可视化混淆矩阵 ======
-    # plt.figure(figsize=(8, 6))
-    # sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-    #             xticklabels=['Predicted 0', 'Predicted 1'],
-    #             yticklabels=['Actual 0', 'Actual 1'])
-    # plt.title(f'Confusion Matrix (Accuracy: {acc:.2%})')
-    # plt.ylabel('True Label')
-    # plt.xlabel('Predicted Label')
-    # plt.tight_layout()
-    # plt.show()
-    #
-    # # ====== 可视化ROC曲线 ======
-    # from sklearn.metrics import roc_curve
-    #
-    # fpr, tpr, thresholds = roc_curve(all_labels, all_probs)
-    #
-    # plt.figure(figsize=(8, 6))
-    # plt.plot(fpr, tpr, 'b-', linewidth=2, label=f'ROC curve (AUC = {auc:.3f})')
-    # plt.plot([0, 1], [0, 1], 'k--', linewidth=1, label='Random')
-    # plt.xlim([0.0, 1.0])
-    # plt.ylim([0.0, 1.05])
-    # plt.xlabel('False Positive Rate', fontsize=12)
-    # plt.ylabel('True Positive Rate', fontsize=12)
-    # plt.title('ROC Curve', fontsize=14)
-    # plt.legend(loc='lower right')
-    # plt.grid(True, alpha=0.3)
-    # plt.tight_layout()
-    # plt.show()
-    #
-    # print("\n" + "=" * 60)
-    # print("测试完成！")
-    # print("=" * 60)
-    # # ====== 准备UMAP数据 ======
-    # # 堆叠所有batch的representation
-    # if len(all_representations) > 0:
-    #     representations_concat = np.vstack(all_representations)
-    #     print(f"堆叠后的representation形状: {representations_concat.shape}")
-    #
-    #     # 检查数据一致性
-    #     n_samples = len(representations_concat)
-    #     print(f"样本总数: {n_samples}")
-    #     print(f"标签数: {len(all_labels)}")
-    #     print(f"概率数: {len(all_probs)}")
-    #     print(f"预测数: {len(all_preds)}")
-    #
-    #     # 确保数据长度一致
-    #     min_length = min(n_samples, len(all_labels), len(all_probs), len(all_preds))
-    #
-    #     if min_length < n_samples:
-    #         print(f"警告: 数据长度不一致，截取到 {min_length} 个样本")
-    #         representations_concat = representations_concat[:min_length]
-    #         all_labels = all_labels[:min_length]
-    #         all_probs = all_probs[:min_length]
-    #         all_preds = all_preds[:min_length]
-    #
-    #     print(f"\nUMAP输入数据:")
-    #     print(f"Representations: {representations_concat.shape}")
-    #     print(f"Labels: {len(all_labels)}")
-    #     print(f"Probabilities: {len(all_probs)}")
-    #     print(f"Predictions: {len(all_preds)}")
-    #
-    #     # ====== 运行UMAP可视化 ======
-    #     print("\n" + "=" * 60)
-    #     print("开始UMAP可视化分析")
-    #     print("=" * 60)
-    #
-    #     # 创建完整的UMAP可视化
-    #     try:
-    #         umap_embedding = create_umap_visualization(
-    #             representations_concat,
-    #             all_labels,
-    #             all_probs,
-    #             all_preds,
-    #             title_suffix="(Test Set)"
-    #         )
-    #         print("✓ UMAP可视化完成")
-    #     except Exception as e:
-    #         print(f"UMAP可视化失败: {e}")
-    #         print("尝试简单UMAP...")
-    #
-    #         # 尝试简单版本
-    #         try:
-    #             simple_embedding = create_simple_umap(
-    #                 representations_concat,
-    #                 all_labels,
-    #                 title="Test Set Representation UMAP"
-    #             )
-    #             print("✓ 简单UMAP可视化完成")
-    #         except Exception as e2:
-    #             print(f"简单UMAP也失败: {e2}")
-    #
-    #     # ====== 额外分析：错误样本分析 ======
-    #     print("\n" + "=" * 60)
-    #     print("错误样本分析")
-    #     print("=" * 60)
-    #
-    #     all_labels_array = np.array(all_labels).flatten()
-    #     all_preds_array = np.array(all_preds).flatten()
-    #     all_probs_array = np.array(all_probs).flatten()
-    #
-    #     correct_mask = all_preds_array == all_labels_array
-    #     error_mask = ~correct_mask
-    #
-    #     error_count = np.sum(error_mask)
-    #
-    #     if error_count > 0:
-    #         print(f"错误样本数: {error_count} ({error_count / len(all_labels_array) * 100:.1f}%)")
-    #         print(f"错误样本的真实标签分布: 0={np.sum(all_labels_array[error_mask] == 0)}, "
-    #               f"1={np.sum(all_labels_array[error_mask] == 1)}")
-    #         print(f"错误样本的平均置信度: {np.mean(all_probs_array[error_mask]):.3f}")
-    #
-    #         # 可视化错误样本在UMAP中的位置
-    #         if 'umap_embedding' in locals():
-    #             plt.figure(figsize=(10, 8))
-    #
-    #             # 绘制所有样本
-    #             plt.scatter(umap_embedding[correct_mask, 0], umap_embedding[correct_mask, 1],
-    #                         c='lightgray', s=30, alpha=0.3, label='Correct sample')
-    #
-    #             # 突出显示错误样本
-    #             error_colors = ['blue' if label == 0 else 'red'
-    #                             for label in all_labels_array[error_mask]]
-    #
-    #             plt.scatter(umap_embedding[error_mask, 0], umap_embedding[error_mask, 1],
-    #                         c=error_colors, s=50, alpha=0.8, edgecolors='black',
-    #                         linewidth=1.5, label='Error sample ')
-    #
-    #             plt.xlabel('UMAP 1', fontsize=12)
-    #             plt.ylabel('UMAP 2', fontsize=12)
-    #             plt.title(f'Distribution of error samples (n={error_count})', fontsize=14)
-    #             plt.legend()
-    #             plt.grid(True, alpha=0.3)
-    #             plt.tight_layout()
-    #             plt.show()
-    #     else:
-    #         print("✓ 所有样本都预测正确！")
-    #
-    # else:
-    #     print("警告: 没有收集到representation数据")
-
-    # # Calculate metrics
-    # mcc = matthews_corrcoef(all_labels, all_preds)
-    # auc = roc_auc_score(all_labels, all_probs)
-    # TP = TN = FP = FN = 0
-    # for i in range(len(all_labels)):
-    #     if all_preds[i] == 1 and all_labels[i] == 1:
-    #         TP += 1
-    #     elif all_preds[i] == 0 and all_labels[i] == 0:
-    #         TN += 1
-    #     elif all_preds[i] == 1 and all_labels[i] == 0:
-    #         FP += 1
-    #     else:
-    #         FN += 1
-    # acc = (TP + TN) / (TP + TN + FP + FN)
-    # sn = TP / (TP + FN)
-    # sp = TN / (TN + FP)
-    # print(f"Test Acc: {acc:.4f}, SN: {sn:.4f}, SP: {sp:.4f}, MCC: {mcc:.4f}, AUC: {auc:.4f}")
+ 
