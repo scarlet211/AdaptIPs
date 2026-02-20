@@ -45,7 +45,7 @@ def make_data_with_unified_length(token_list, max_len):
     token2index = pickle.load(open('../data/residue2idx.pkl', 'rb'))
     data = []
     for i in range(len(token_list)):
-        token_list[i] = [token2index['[CLS]']] + token_list[i] + [token2index['[SEP]']]  # 前
+        token_list[i] = [token2index['[CLS]']] + token_list[i] + [token2index['[SEP]']]  
         n_pad = max_len - len(token_list[i])
         token_list[i].extend([0] * n_pad)
         data.append(token_list[i])
@@ -59,10 +59,10 @@ def esmcmain(client: ESMCInferenceClient, seq):
     # ================================================================
     # Example usage: one single protein
     # ================================================================
-    protein = ESMProtein(seq)  # 初始化ESMC蛋白序列对象
+    protein = ESMProtein(seq)  # Initialize the ESMC protein sequence object
 
     # Use logits endpoint. Using bf16 for inference optimization
-    protein_tensor = client.encode(protein)  # 将序列转化为索引
+    protein_tensor = client.encode(protein)  # Convert the sequence into an index
     output = client.logits(
         protein_tensor, LogitsConfig(sequence=True, return_embeddings=True)
     )
@@ -86,17 +86,16 @@ def find_best_threshold(y_true, y_prob):
             best_thr = thr
     return best_thr, best_acc
 def set_seed(seed: int = 42):
-    os.environ['PYTHONHASHSEED'] = str(seed)          # 固定 python hash
+    os.environ['PYTHONHASHSEED'] = str(seed)          # python hash
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)                  # multi-GPU
-    # PyTorch Deterministic 设置（可能降低性能）
+    
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    # 更严格（PyTorch >=1.8），遇到非确定性操作会报错
-    # torch.use_deterministic_algorithms(True)
+   
 def get_scheduler(optimizer, name="cosine", **kwargs):
     name = name.lower()
     if name == "steplr":
@@ -141,26 +140,24 @@ def get_cond_entropy(probs):
     return cond_ent
 
 def get_val_loss(logits, label, criterion):
-    # logits: (b,1) 或 (b,C)
+    # logits: (b,1) or (b,C)
     alpha = 0.1
-        # 尝试用 BCEWithLogitsLoss（输入形状可为 (b,) 或 (b,1)）
+    
     try:
         ce = criterion(logits, label.float().view(-1))  # shape: (b,)
         probs_pos = torch.sigmoid(logits.view(-1, 1))            # (b,1)
-        probs = torch.cat([1 - probs_pos, probs_pos], dim=1)     # (b,2) 供熵函数使用
+        probs = torch.cat([1 - probs_pos, probs_pos], dim=1)     # (b,2) 
     except Exception:
-        # 若 criterion 为 CrossEntropyLoss(2 classes)，将单 logit 扩展为两类 logits
+      
         logits_cat = torch.cat([-logits, logits], dim=1)        # (b,2)
         ce = criterion(logits_cat.view(-1, 2), label.view(-1)) # shape: (b,)
         probs = F.softmax(logits_cat, dim=1)                   # (b,2)
 
 
-    # 确保 ce 为一维 per-sample
     if ce.dim() == 0:
         ce = ce.unsqueeze(0)
     ce = ce.float().view(-1)
 
-    # per-sample 变换和熵项（假设 get_entropy/get_cond_entropy 返回 per-sample 向量）
     transformed = (ce - alpha).abs() + alpha          # (b,)
     ent = get_entropy(probs).view(-1)                 # (b,)
     cond_ent = get_cond_entropy(probs).view(-1)       # (b,)
@@ -217,449 +214,22 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
     attention_mask = encoded_texts['attention_mask'].to(device)
     labels = torch.tensor(train_label, dtype=torch.float32).unsqueeze(1).to(device)
 
-    # labels_np = labels.view(-1).cpu().numpy().astype(int)
-    # # Define K-fold cross-validation
-    # k = 5
-    # # kf = KFold(n_splits=k, shuffle=True, random_state=42)
-    # skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
-    # counts = np.bincount(labels_np)
-    # if counts.min() < k:
-    #     raise ValueError(f"Some class has fewer than {k} samples (counts={counts}). Reduce n_splits or rebalance data.")
-    #
-    # # Start cross-validation
-    # # for fold, (train_indices, val_indices) in enumerate(kf.split(input_ids)):
-    # for fold, (train_indices, val_indices) in enumerate(skf.split(np.arange(len(labels_np)), labels_np)):
-    #     print("##############")
-    #     print(f"Fold {fold + 1}:")
-    #     print("##############")
-    #     # Split training and validation sets
-    #     train_input_ids, train_attention_mask, train_labels, train_fea1, train_fea2 = input_ids[train_indices], \
-    #     attention_mask[train_indices], labels[train_indices], fea1[train_indices], fea2[train_indices]
-    #     val_input_ids, val_attention_mask, val_labels, val_fea1, val_fea2 = input_ids[val_indices], attention_mask[
-    #         val_indices], labels[val_indices], fea1[val_indices], fea2[val_indices]
-    #
-    #     batch_size = 32
-    #
-    #     # Create DataLoader
-    #     train_dataset = TensorDataset(train_input_ids, train_attention_mask, train_labels, train_fea1, train_fea2)
-    #     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    #     val_dataset = TensorDataset(val_input_ids, val_attention_mask, val_labels, val_fea1, val_fea2)
-    #     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    #
-    #     # Initialize variables and model
-    #     val_accuracy = 0
-    #     val_sensitivity = 0
-    #     val_specificity = 0
-    #
-    #     best_model = None
-    #     num_epochs = 30
-    #     total_steps = len(train_loader) * num_epochs
-    #     print("train_loader length:", len(train_loader))
-    #     # Model parameter initialization
-    #     # model = EsmForSequenceClassification.from_pretrained("../ESM2-150M", num_labels=1).to(device)
-    #     model = Adapt_emb_CNNLSTM_ATT().to(device)
-    #     # criterion = nn.BCELoss(size_average=False)
-    #     criterion = nn.BCEWithLogitsLoss()
-    #     lambda_contrast = 0
-    #     # Define loss function and optimizer
-    #     optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    #     # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
-    #     # scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
-    #     num_warmup_steps = int(0.1 * total_steps)  # 10% 作为 warmup
-    #     scheduler = get_linear_schedule_with_warmup(
-    #         optimizer,
-    #         num_warmup_steps=num_warmup_steps,
-    #         num_training_steps=total_steps
-    #     )
-    #
-    #     best_val_auc = 0
-    #     best_metrics = None
-    #     # Train model
-    #     for epoch in range(num_epochs):
-    #         model.train()
-    #         total_loss = 0
-    #         for batch_input_ids, batch_attention_mask, batch_labels, batch_fea1, batch_fea2 in train_loader:
-    #             optimizer.zero_grad()
-    #             # outputs = model(batch_input_ids, batch_attention_mask, labels=batch_labels, return_dict=True)
-    #             # loss = outputs.loss
-    #             # logits = outputs.logits
-    #
-    #             # fx, presention, _, loss2 = model(batch_fea1,batch_fea2,batch_input_ids, batch_attention_mask, labels=batch_labels)  # torch.Size([256, 1])
-    #             # loss = criterion(fx, batch_labels.type(torch.FloatTensor).to(device))  # B
-    #             # loss = loss
-    #             batch_labels = batch_labels.float().to(device)  # 先放到 device
-    #             batch_labels = batch_labels.view(-1)
-    #             logits, representation, fused, loss_contrast = model(batch_fea1, batch_fea2, batch_input_ids,
-    #                                                                  batch_attention_mask, labels=batch_labels)
-    #             loss_main = criterion(logits, batch_labels)
-    #             loss = loss_main + lambda_contrast * loss_contrast
-    #
-    #             total_loss += loss.item()
-    #             loss.backward()
-    #             optimizer.step()
-    #             scheduler.step()
-    #
-    #         avg_loss = total_loss / len(train_loader)
-    #         print("  Average training loss: {0:.4f}".format(avg_loss))
-    #
-    #         # Validate model for each epoch
-    #         val_predictions = []
-    #         val_probabilities = []
-    #         val_labels = []
-    #         model.eval()
-    #         # Tracking variables
-    #         for batch_input_ids, batch_attention_mask, batch_labels, batch_fea1, batch_fea2 in val_loader:
-    #             with torch.no_grad():
-    #                 # outputs = model(batch_input_ids, batch_attention_mask, labels=batch_labels, return_dict=True)
-    #                 # fx, presention, _, loss2 = model(batch_fea1,batch_fea2,batch_input_ids, batch_attention_mask, labels=batch_labels)
-    #                 logits, representation, fused, loss_contrast = model(batch_fea1, batch_fea2, batch_input_ids,
-    #                                                                      batch_attention_mask, labels=None)
-    #                 probs = torch.sigmoid(logits)
-    #
-    #                 # outputs = outputs.logits
-    #             # outputs=fx
-    #             batch_probs = probs.cpu().numpy()
-    #             batch_preds = (batch_probs >= 0.5).astype(int)
-    #
-    #             val_predictions.extend(batch_preds.tolist())
-    #             val_probabilities.extend(batch_probs.tolist())
-    #             val_labels.extend(batch_labels.detach().cpu().numpy())
-    #
-    #         # Calculate MCC, AUC
-    #         val_mcc = matthews_corrcoef(val_labels, val_predictions)
-    #         val_auc = roc_auc_score(val_labels, val_probabilities)
-    #         # Calculate sensitivity and specificity
-    #         TP = TN = FP = FN = 0
-    #         for i in range(len(val_labels)):
-    #             if val_predictions[i] == 1 and val_labels[i] == 1:
-    #                 TP += 1
-    #             elif val_predictions[i] == 0 and val_labels[i] == 0:
-    #                 TN += 1
-    #             elif val_predictions[i] == 1 and val_labels[i] == 0:
-    #                 FP += 1
-    #             else:
-    #                 FN += 1
-    #         val_sensitivity = TP / (TP + FN + 1e-8)
-    #         val_specificity = TN / (TN + FP + 1e-8)
-    #         val_accuracy = (TP + TN) / (TP + TN + FP + FN)
-    #         print(
-    #             f"Validation Accuracy: {val_accuracy:.4f} | Validation Sensitivity: {val_sensitivity:.4f} | Validation Specificity: {val_specificity:.4f} | Validation MCC: {val_mcc:.4f} | Validation AUC: {val_auc:.4f}")
-    #         output_string = f"Validation Accuracy: {val_accuracy:.4f} | Validation Sensitivity: {val_sensitivity:.4f} | Validation Specificity: {val_specificity:.4f} | Validation MCC: {val_mcc:.4f} | Validation AUC: {val_auc:.4f}\n"
-    #
-    #         if val_auc > best_val_auc:
-    #             best_val_auc = val_auc
-    #             best_metrics = (val_accuracy, val_sensitivity, val_specificity, val_mcc, val_auc)
-    #
-    #         with open("../Result/ST_output.txt", "a") as file:
-    #             file.write(output_string)
-    #     accuracies.append(best_metrics[0])
-    #     val_sensitivity_list.append(best_metrics[1])
-    #     val_specificity_list.append(best_metrics[2])
-    #     val_mcc_list.append(best_metrics[3])
-    #     val_auc_list.append(best_metrics[4])
-    #     # 保存最终模型
-    #     model_save = model.state_dict()
-    #     torch.save(model_save, f'../Result/ST_MMM_model_{fold + 1}.pth')
-    # print("Cross Validation Results:")
-    # print(
-    #     f"Average Accuracy: {np.mean(accuracies):.4f} | Average Sensitivity: {np.mean(val_sensitivity_list):.4f} | Average Specificity {np.mean(val_specificity_list):.4f} | Average MCC: {np.mean(val_mcc_list):.4f} | Average AUC: {np.mean(val_auc_list):.4f}")
-
-
-    #
-    # # Complete model training
-    # # 全量
-    # num_epochs = 30
-    # batch_size = 32
-    # lambda_contrast=0
-    # train_dataset = TensorDataset(input_ids, attention_mask, labels,fea1,fea2)
-    #
-    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    # total_steps = len(train_loader) * num_epochs
-    # # model = EsmForSequenceClassification.from_pretrained("../ESM2-150M", num_labels=1).to(device)
-    # model = Adapt_emb_CNNLSTM_ATT().to(device)
-    # criterion = nn.BCEWithLogitsLoss()
-    # # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
-    # # optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=1e-4)
-    # # scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
-    # num_warmup_steps = int(0.1 * total_steps)  # 10% 作为 warmup
-    # scheduler = get_linear_schedule_with_warmup(
-    #     optimizer,
-    #     num_warmup_steps=num_warmup_steps,
-    #     num_training_steps=total_steps
-    # )
-    #
-    # model.train()
-    # for epoch in range(num_epochs):
-    #     total_loss = 0
-    #     for batch_input_ids, batch_attention_mask, batch_labels,batch_fea1 ,batch_fea2 in train_loader:
-    #         optimizer.zero_grad()
-    #         # outputs = model(batch_input_ids, batch_attention_mask, labels=batch_labels, return_dict=True)
-    #         # loss = outputs.loss
-    #         # logits = outputs.logits
-    #         batch_labels = batch_labels.float().to(device)  # 先放到 device
-    #         batch_labels = batch_labels.view(-1)
-    #         logits, representation, fused, loss_contrast = model(batch_fea1, batch_fea2, batch_input_ids,
-    #                                                              batch_attention_mask, labels=batch_labels)
-    #         # loss_main = criterion(logits, batch_labels)
-    #         # loss = loss_main + lambda_contrast * loss_contrast
-    #         loss = get_val_loss(logits, batch_labels, criterion)
-    #
-    #         # fx, presention, _, loss2 = model(batch_fea1,batch_fea2,batch_input_ids, batch_attention_mask, labels=batch_labels)  # torch.Size([256, 1])
-    #         # loss = criterion(fx, batch_labels.type(torch.FloatTensor).to(device))  # B
-    #         # loss = loss
-    #
-    #         total_loss += loss.item()
-    #         loss.backward()
-    #         optimizer.step()
-    #         scheduler.step()
-    #
-    #     avg_loss = total_loss / len(train_loader)
-    #     print("  Average training loss: {0:.4f}".format(avg_loss))
-    #
-    # model_save = model.state_dict()
-    # torch.save(model_save, '../Result/ST_MMM_model.pth')
-
-
-
-    # # Define K-fold cross-validation   加入早停
-    # labels_np = labels.view(-1).cpu().numpy().astype(int)
-    # k = 5
-    # # kf = KFold(n_splits=k, shuffle=True, random_state=42)
-    # skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
-    # counts = np.bincount(labels_np)
-    # if counts.min() < k:
-    #     raise ValueError(f"Some class has fewer than {k} samples (counts={counts}). Reduce n_splits or rebalance data.")
-    #
-    # # Start cross-validation
-    # # for fold, (train_indices, val_indices) in enumerate(kf.split(input_ids)):
-    # for fold, (train_indices, val_indices) in enumerate(skf.split(np.arange(len(labels_np)), labels_np)):
-    #     print("##############")
-    #     print(f"Fold {fold + 1}:")
-    #     print("##############")
-    #     # Split training and validation sets
-    #     train_input_ids, train_attention_mask, train_labels,train_fea1, train_fea2= input_ids[train_indices], attention_mask[train_indices], labels[train_indices], fea1[train_indices], fea2[train_indices]
-    #     val_input_ids, val_attention_mask, val_labels,val_fea1,val_fea2 = input_ids[val_indices], attention_mask[val_indices], labels[val_indices], fea1[val_indices], fea2[val_indices]
-    #
-    #     batch_size = 32
-    #
-    # #     # Create DataLoader
-    #     train_dataset = TensorDataset(train_input_ids, train_attention_mask, train_labels,train_fea1,train_fea2)
-    #     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    #     val_dataset = TensorDataset(val_input_ids, val_attention_mask, val_labels,val_fea1,val_fea2)
-    #     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    #
-    #     # Initialize variables and model
-    #     val_accuracy = 0
-    #     val_sensitivity = 0
-    #     val_specificity = 0
-    #
-    #
-    #
-    #     best_model = None
-    #     num_epochs = 100
-    #     total_steps = len(train_loader) * num_epochs
-    #     print("train_loader length:", len(train_loader))
-    #     # Model parameter initialization
-    #     # model = EsmForSequenceClassification.from_pretrained("../ESM2-150M", num_labels=1).to(device)
-    #     model = Adapt_emb_CNNLSTM_ATT().to(device)
-    #     # criterion = nn.BCELoss(size_average=False)
-    #     # criterion = nn.BCEWithLogitsLoss()
-    #     pos = labels.sum().item()
-    #     neg = labels.shape[0] - pos
-    #     pos_weight = torch.tensor(neg / (pos + 1e-12))
-    #     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(device))
-    #     lambda_contrast = 0.5
-    #     # Define loss function and optimizer
-    #     # optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    #     # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
-    #     # optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=2e-4)
-    #     # optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=5e-5)
-    #     # optimizer = optim.AdamW(model.parameters(), lr=1e-3)
-    #     optimizer = torch.optim.AdamW(model.parameters(), lr=0.01, weight_decay=1e-4)
-    #     # scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
-    #     num_warmup_steps = int(0.1 * total_steps)  # 10% 作为 warmup
-    #     scheduler = get_linear_schedule_with_warmup(
-    #         optimizer,
-    #         num_warmup_steps=num_warmup_steps,
-    #         num_training_steps=total_steps
-    #     )
-    #
-    #     best_acc = 0.0
-    #     best_metrics  = None
-    #     best_state = None
-    #     patience = 10
-    #     patience_counter = 0
-    #     # Train model
-    #     for epoch in range(num_epochs):
-    #         model.train()
-    #         total_loss = 0
-    #         for batch_input_ids, batch_attention_mask, batch_labels,batch_fea1 ,batch_fea2 in train_loader:
-    #             optimizer.zero_grad()
-    #             # outputs = model(batch_input_ids, batch_attention_mask, labels=batch_labels, return_dict=True)
-    #             # loss = outputs.loss
-    #             # logits = outputs.logits
-    #
-    #             # fx, presention, _, loss2 = model(batch_fea1,batch_fea2,batch_input_ids, batch_attention_mask, labels=batch_labels)  # torch.Size([256, 1])
-    #             # loss = criterion(fx, batch_labels.type(torch.FloatTensor).to(device))  # B
-    #             # loss = loss
-    #             batch_labels = batch_labels.float().to(device)  # 先放到 device
-    #             batch_labels = batch_labels.view(-1)
-    #             logits, representation, fused, loss_contrast= model(batch_fea1, batch_fea2,batch_input_ids, batch_attention_mask,labels=batch_labels)
-    #             # loss_main = criterion(logits, batch_labels)
-    #             # loss = loss_main + lambda_contrast * loss_contrast
-    #             loss = get_val_loss(logits, batch_labels, criterion)
-    #             total_loss += loss.item()
-    #             loss.backward()
-    #             optimizer.step()
-    #             scheduler.step()
-    #
-    #         avg_loss = total_loss / len(train_loader)
-    #         # print("  Average training loss: {0:.4f}".format(avg_loss))
-    #         print(f"Epoch {epoch + 1} | Average training loss: {avg_loss:.4f}")
-    #
-    #         # Validate model for each epoch
-    #         val_predictions = []
-    #         val_probabilities = []
-    #         val_labels_epoch = []
-    #         model.eval()
-    #         # Tracking variables
-    #         with torch.no_grad():
-    #             for batch_input_ids, batch_attention_mask, batch_labels, batch_fea1, batch_fea2 in val_loader:
-    #                 batch_input_ids = batch_input_ids.to(device)
-    #                 batch_attention_mask = batch_attention_mask.to(device)
-    #                 batch_fea1 = batch_fea1.to(device)
-    #                 batch_fea2 = batch_fea2.to(device)
-    #                 batch_labels = batch_labels.float().to(device).view(-1)  # (B,)
-    #
-    #                 logits, representation, fused, loss_contrast = model(
-    #                     batch_fea1, batch_fea2, batch_input_ids, batch_attention_mask, labels=None
-    #                 )
-    #                 probs = torch.sigmoid(logits)  # (B,)
-    #
-    #                 batch_probs = probs.cpu().numpy().reshape(-1)
-    #                 batch_preds = (batch_probs >= 0.5).astype(int)
-    #
-    #                 val_predictions.extend(batch_preds.tolist())
-    #                 val_probabilities.extend(batch_probs.tolist())
-    #                 val_labels_epoch.extend(batch_labels.cpu().numpy().tolist())
-    #
-    #
-    #         # for batch_input_ids, batch_attention_mask, batch_labels,batch_fea1,batch_fea2 in val_loader:
-    #         #     with torch.no_grad():
-    #         #         # outputs = model(batch_input_ids, batch_attention_mask, labels=batch_labels, return_dict=True)
-    #         #         # fx, presention, _, loss2 = model(batch_fea1,batch_fea2,batch_input_ids, batch_attention_mask, labels=batch_labels)
-    #         #         logits, representation, fused, loss_contrast = model(batch_fea1, batch_fea2, batch_input_ids,
-    #         #                                                              batch_attention_mask, labels=None)
-    #         #         probs = torch.sigmoid(logits)
-    #         #
-    #         #         # outputs = outputs.logits
-    #         #     # outputs=fx
-    #         #     batch_probs = probs.cpu().numpy()
-    #         #     batch_preds = (batch_probs >= 0.5).astype(int)
-    #         #
-    #         #     val_predictions.extend(batch_preds.tolist())
-    #         #     val_probabilities.extend(batch_probs.tolist())
-    #         #     val_labels.extend(batch_labels.detach().cpu().numpy())
-    #
-    #         # Calculate MCC, AUC
-    #         val_mcc = matthews_corrcoef(val_labels_epoch, val_predictions)
-    #         val_auc = roc_auc_score(val_labels_epoch, val_probabilities)
-    #
-    #
-    #         TP = TN = FP = FN = 0
-    #         for y_true, y_pred in zip(val_labels_epoch, val_predictions):
-    #             if y_pred == 1 and y_true == 1:
-    #                 TP += 1
-    #             elif y_pred == 0 and y_true == 0:
-    #                 TN += 1
-    #             elif y_pred == 1 and y_true == 0:
-    #                 FP += 1
-    #             else:
-    #                 FN += 1
-    #
-    #         val_sensitivity = TP / (TP + FN + 1e-8)
-    #         val_specificity = TN / (TN + FP + 1e-8)
-    #         val_accuracy = accuracy_score(val_labels_epoch, val_predictions)
-    #
-    #
-    #         print(f"Validation Accuracy: {val_accuracy:.4f} | Validation Sensitivity: {val_sensitivity:.4f} | Validation Specificity: {val_specificity:.4f} | Validation MCC: {val_mcc:.4f} | Validation AUC: {val_auc:.4f}")
-    #         output_string = f"Validation Accuracy: {val_accuracy:.4f} | Validation Sensitivity: {val_sensitivity:.4f} | Validation Specificity: {val_specificity:.4f} | Validation MCC: {val_mcc:.4f} | Validation AUC: {val_auc:.4f}\n"
-    #
-    #         with open("../Result/ST_output.txt", "a") as file:
-    #             file.write(output_string)
-    #         # ====== Early stopping & 记录最优模型 ======
-    #         if val_accuracy > best_acc + 1e-4:  # 有提升
-    #             best_acc = val_accuracy
-    #             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-    #             best_metrics = (val_accuracy, val_sensitivity, val_specificity, val_mcc, val_auc)
-    #             patience_counter = 0
-    #         else:
-    #             patience_counter += 1
-    #             if patience_counter >= patience:
-    #                 print(f"Early stopping at epoch {epoch}")
-    #                 break
-    #
-    #         # accuracies.append(val_accuracy)
-    #         # val_sensitivity_list.append(val_sensitivity)
-    #         # val_specificity_list.append(val_specificity)
-    #         # val_mcc_list.append(val_mcc)
-    #         # val_auc_list.append(val_auc)
-    #
-    #
-    #     # 折结束后，恢复到该折最优模型
-    #     if best_state is not None:
-    #         model.load_state_dict(best_state)
-    #
-    #     # 保存最终模型
-    #     model_save = model.state_dict()
-    #     torch.save(model_save, f'../Result/ST_MMM_model_{fold + 1}.pth')
-    #
-    #     if best_metrics is not None:
-    #         acc, sens, spec, mcc, auc = best_metrics
-    #         accuracies.append(acc)
-    #         val_sensitivity_list.append(sens)
-    #         val_specificity_list.append(spec)
-    #         val_mcc_list.append(mcc)
-    #         val_auc_list.append(auc)
-    #         print(
-    #             f"[Fold {fold + 1}] Best -> Acc: {acc:.4f}, Sens: {sens:.4f}, Spec: {spec:.4f}, MCC: {mcc:.4f}, AUC: {auc:.4f}")
-    #     else:
-    #         print(f"[Fold {fold + 1}] No best_metrics available.")
-    #
-    # print("Cross Validation Results:")
-    # print(
-    #     f"Average Accuracy: {np.mean(accuracies):.4f} | "
-    #     f"Average Sensitivity: {np.mean(val_sensitivity_list):.4f} | "
-    #     f"Average Specificity: {np.mean(val_specificity_list):.4f} | "
-    #     f"Average MCC: {np.mean(val_mcc_list):.4f} | "
-    #     f"Average AUC: {np.mean(val_auc_list):.4f}"
-    # )
-    # print("Cross Validation Results:")
-    # print(
-    #     f"Average Accuracy: {np.mean(accuracies):.4f} ± {np.std(accuracies, ddof=1):.4f} | "
-    #     f"Average Sensitivity: {np.mean(val_sensitivity_list):.4f} ± {np.std(val_sensitivity_list, ddof=1):.4f} | "
-    #     f"Average Specificity: {np.mean(val_specificity_list):.4f} ± {np.std(val_specificity_list, ddof=1):.4f} | "
-    #     f"Average MCC: {np.mean(val_mcc_list):.4f} ± {np.std(val_mcc_list, ddof=1):.4f} | "
-    #     f"Average AUC: {np.mean(val_auc_list):.4f} ± {np.std(val_auc_list, ddof=1):.4f}"
-    # )
 
 
 
 
 
     # =======================
-    # Complete model training（全量数据最终训练）
+    # Complete model training
     # =======================
     set_seed(42)
     num_epochs_final = 100
     batch_size = 32
 
-    # 用全部数据构建 dataset
+    # all dataset
     full_dataset = TensorDataset(input_ids, attention_mask, labels, fea1, fea2)
     num_samples = len(full_dataset)
 
-    # 从全部数据中再划一个小验证集用于 early stopping（例如 10%）
     indices = np.arange(num_samples)
     labels_np = labels.view(-1).cpu().numpy()  # (N,)
     train_idx, val_idx = train_test_split(
@@ -692,7 +262,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
     # criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
 
 
-    lambda_contrast =0# 先只训主任务
+    lambda_contrast =0
 
     # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-2)
     # optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=2e-4)
@@ -711,7 +281,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
     # scheduler = get_scheduler(optimizer, name="reducelronplateau", factor=0.5, patience=3)
 
 
-    # early stopping 变量
+    # early stopping 
     best_auc_full = 0.0
     best_state_full = None
     best_acc_full = 0.0
@@ -722,7 +292,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
 
     print("===== Start full-data training =====")
     for epoch in range(num_epochs_final):
-        # ---------- 训练 ----------
+        # ---------- training ----------
         model.train()
         total_loss = 0.0
 
@@ -756,7 +326,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
         avg_loss = total_loss / len(train_loader)
         print(f"[Full] Epoch {epoch + 1} | train_loss={avg_loss:.4f}")
 
-        # ---------- 在小验证集上 early stopping ----------
+        # ---------- early stopping ----------
         model.eval()
         val_predictions = []
         val_probabilities = []
@@ -809,7 +379,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
             f"val_auc={val_auc:.4f} | val_mcc={val_mcc:.4f}| sn={sn:.4f}| sp={sp:.4f}"
         )
 
-        # early stopping：根据 AUC 选择最优模型
+        # early stopping：
         if val_mcc > best_mcc_full + 1e-4:
             best_auc_full = val_auc
             best_acc_full = val_accuracy_full
@@ -824,7 +394,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
                 break
 
 
-    # 训练完后，恢复到最优 AUC 对应的参数
+    # After training, restore to the parameters corresponding to the optimal AUC.
     if best_state_full is not None:
         model.load_state_dict(best_state_full)
         print(
@@ -834,7 +404,7 @@ def train_and_evaluate_model_with_cv(train_data, train_label,test_data, test_lab
     else:
         print("[Full] No best model found.")
 
-    # 保存最终模型
+    # save
     model_save = model.state_dict()
     torch.save(model_save, '../Result/ST_MMM_model_TEST.pth')
     print("Saved final full-data model to ../Result/ST_MMM_model_TEST.pth")
