@@ -44,34 +44,34 @@ class BahdanauAttention(nn.Module):
         return context_vector, attention_weights
 class MultiplicationFusion(nn.Module):
     """
-    乘法融合模块（适应维度不匹配）。
-    - 将 context 扩展到 T=32，然后元素-wise 乘法。
-    - 输出形状: [B, 32, fused_dim]。
+    Multiplication Fusion Module (adaptive to dimension mismatch).
+    Expand the context to T=32, then perform element-wise multiplication.
+    Output shape: [B, 32, fused_dim].
     """
     def __init__(self, in_dim, fused_dim):
         super(MultiplicationFusion, self).__init__()
-        self.proj = nn.Linear(in_dim, fused_dim)  # 可选投影
+        self.proj = nn.Linear(in_dim, fused_dim)  
 
     def forward(self, context, bilstm):
         """
-        输入:
+        input:
         - context: [B, 1, D]
         - bilstm: [B, 32, D]
-        输出: [B, 32, fused_dim]
+        output: [B, 32, fused_dim]
         """
-        # 扩展 context 到 [B, 32, D]
+        
         context_exp = context.expand(-1, bilstm.size(1), -1)  # [B, 32, D]
-        fused = context_exp * bilstm  # 元素-wise 乘法 [B, 32, D]
-        fused = F.relu(self.proj(fused))  # 可选：投影 + 非线性
+        fused = context_exp * bilstm  
+        fused = F.relu(self.proj(fused))  
         return fused
 class ESMFeatureEncoder(nn.Module):
     def __init__(self, esm_dim=1152, hidden_dim=256, n_heads=4, n_layers=1, dropout=0.1):
         super().__init__()
-        # 1) 降维 + 归一化
+        # 1) Dimensionality Reduction + Normalization
         self.proj = nn.Linear(esm_dim, hidden_dim)
         self.ln = nn.LayerNorm(hidden_dim)
 
-        # 2) 轻量 Transformer 编码结构特征
+        # 2) Lightweight Transformer Encoder Structural Features
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
             nhead=n_heads,
@@ -81,7 +81,7 @@ class ESMFeatureEncoder(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
-        # 3) 注意力池化，把 (B, L, D) → (B, D)
+        # 3) Attention Pooling (B, L, D) → (B, D)
         self.attn_vec = nn.Linear(hidden_dim, 1)
 
     def forward(self, fea2, mask=None):
@@ -93,14 +93,14 @@ class ESMFeatureEncoder(nn.Module):
         x = self.ln(x)
 
         if mask is not None:
-            # Transformer 的 key_padding_mask: True 表示要mask掉的位置
+            #For Transformer's key_padding_mask: a value of True indicates the positions to be masked out.
             key_padding_mask = (mask == 0)
         else:
             key_padding_mask = None
 
         x = self.encoder(x, src_key_padding_mask=key_padding_mask)  # (B, L, hidden_dim)
 
-        # 注意力池化
+        
         attn_scores = self.attn_vec(x).squeeze(-1)   # (B, L)
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, float('-inf'))
@@ -108,7 +108,7 @@ class ESMFeatureEncoder(nn.Module):
         attn_weights = F.softmax(attn_scores, dim=-1)      # (B, L)
         s = torch.bmm(attn_weights.unsqueeze(1), x).squeeze(1)  # (B, hidden_dim)
 
-        return s, attn_weights   # s 就是“结构表征”
+        return s, attn_weights   
 class GatedFusion(nn.Module):
     def __init__(self, dim=256):
         super().__init__()
@@ -140,7 +140,7 @@ class GatedFusion(nn.Module):
 
 
 class CrossAttentionFusion(nn.Module):
-    """双向交叉注意力融合"""
+    """Bidirectional Cross-Attention Fusion"""
 
     def __init__(self, dim, num_heads, dropout=0.0):
         super(CrossAttentionFusion, self).__init__()
@@ -163,16 +163,16 @@ class CrossAttentionFusion(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, query, key, value):
-        # query: (B, 1, dim) - 通常是CNN特征
-        # key/value: (B, 1, dim) - 通常是ESM特征
+        # query: (B, 1, dim) - Usually CNN features.
+        # key/value: (B, 1, dim) - Usually ESM features.
 
-        # CNN到ESM的注意力
+        
         cnn_enhanced, _ = self.attn_cnn_to_esm(query, key, value)
 
-        # ESM到CNN的注意力
+        
         esm_enhanced, _ = self.attn_esm_to_cnn(key, query, query)
 
-        # 融合
+    
         fused = (cnn_enhanced + esm_enhanced) / 2
         fused = self.norm(fused + self.dropout(fused))
 
@@ -203,7 +203,7 @@ class Adapt_emb_CNNLSTM_ATT(nn.Module):
         #         in_channels=33,
         #         out_channels=256,
         #         kernel_size=kernel_size,
-        #         padding=kernel_size // 2  # ✅ 保留边界信息
+        #         padding=kernel_size // 2  
         #     ),
         #     nn.ReLU(),
         #     nn.BatchNorm1d(256),
@@ -248,7 +248,7 @@ class Adapt_emb_CNNLSTM_ATT(nn.Module):
             nn.Linear(256 * 2, 256),
             nn.ReLU(),
             nn.Linear(256, 1),
-            nn.Sigmoid()  # 输出在 (0,1)，作为自适应权重
+            nn.Sigmoid()  # The output is within (0, 1), serving as an adaptive weight.
         )
         self.esm_encoder = ESMFeatureEncoder(esm_dim=1152, hidden_dim=256)
         # self.cross_attn = nn.MultiheadAttention(embed_dim=256, num_heads=8, batch_first=True)
@@ -289,21 +289,21 @@ class Adapt_emb_CNNLSTM_ATT(nn.Module):
         return F.cross_entropy(logits, labels)
 
     def compute_contrastive_loss(self, z1, z2, temperature=0.2):
-        """改进的对比损失"""
+        """Improved contrastive loss"""
         if temperature is None:
             temperature = self.config.temperature
 
-        # 归一化
+        
         z1 = F.normalize(z1, dim=-1)
         z2 = F.normalize(z2, dim=-1)
 
-        # 计算相似度矩阵
+        # Calculate the similarity matrix
         sim_matrix = torch.matmul(z1, z2.T) / temperature
 
-        # 对角线是正样本对
+        # The diagonal represents the positive sample pairs.
         labels = torch.arange(z1.size(0)).to(z1.device)
 
-        # InfoNCE损失
+        # InfoNCE loss
         loss = F.cross_entropy(sim_matrix, labels)
 
         return loss
@@ -322,7 +322,7 @@ class Adapt_emb_CNNLSTM_ATT(nn.Module):
         x = self.conv1(x_first35)
         x = x.transpose(1, 2)  # 256*28*256
         out = x  # (B, T, 256)
-        # 全局 max-pooling 或 mean-pooling 都可以，先用 max 试试
+        
         h_n = out.max(dim=1).values  # (B, 256)
         # h_n = self.linear1(h_n)
         context_vector, attention_weights = self.Attention(h_n, out)  # b*1*256 b*28*1 b*256 b*28*256
@@ -336,31 +336,17 @@ class Adapt_emb_CNNLSTM_ATT(nn.Module):
         # fused=context_vector
         fused = self.fusion(context_vector, s)
 
-        # fusion_input = torch.cat([context_vector, s], dim=-1)  # (B, 1, 512)
-        # alpha = self.fusion_gate(fusion_input)  # (B, 1, 1)，自适应权重
-        # # alpha 越大，越偏向 context_vector；越小，越偏向 s
-        # fused = alpha * context_vector + (1.0 - alpha) * s
-
-        # fused = self.fusion1(context_vector, s,s)
-        # fused =torch.cat([context_vector, s], dim=-1)
-
+   
         fused = torch.mean(fused, 1)
         representation = self.fc(fused)
 
         logits = self.classifier(representation).squeeze(-1)  # (B,) raw logits
 
-        # 5) 对比损失（建议先做归一化）
-        # h_n_norm = F.normalize(h_n, dim=-1)
-        # h_n1_norm = F.normalize(h_n1, dim=-1)
-        # contrastive = self.contrastive_loss(h_n_norm, h_n1_norm)
-        # loss_contrast = self.contrastive_loss(
-        #     context_vector.squeeze(1),
-        #     s.squeeze(1),
-        #     labels=labels
-        # ) if labels is not None else torch.tensor(0.0, device=logits.device)
+        
         loss_contrast=0
         # loss_contrast =self.compute_contrastive_loss(
         #     context_vector.squeeze(1),
         #     s.squeeze(1))
+
 
         return logits, representation, umap, esm_attn
