@@ -48,7 +48,7 @@ train_headers = [s[1:] for s in ST_train if s.startswith(">")]
 test_headers  = [s[1:] for s in ST_test  if s.startswith(">")]
 ST_train_y = np.array([int(h) for h in train_headers], dtype=np.int64)
 ST_test_y  = np.array([int(h) for h in test_headers], dtype=np.int64)
-# ST_train_y = np.concatenate([np.ones((int(len(ST_train_x)/2),)), np.zeros((int(len(ST_train_x)/2),))], axis=0)  #竖向拼接
+# ST_train_y = np.concatenate([np.ones((int(len(ST_train_x)/2),)), np.zeros((int(len(ST_train_x)/2),))], axis=0)  
 # ST_test_y = np.concatenate([np.ones((int(len(ST_test_x)/2),)), np.zeros((int(len(ST_test_x)/2),))], axis=0)
 print(ST_train_y.shape,ST_test_y.shape)
 print("———————————————————————————————————————————————————")
